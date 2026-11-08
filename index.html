@@ -83,7 +83,50 @@
 		</div>
 		
 		<h2>Part 2: Bounding Volume Hierarchy</h2>
-		Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.
+		<p>A bounding volume hierarchy (BVH) is a binary tree of axis-aligned boxes, where each node's box encloses every primitive below it. A ray that misses a box skips all of those primitives, instead of being tested against every primitive in the scene.</p>
+		<p><code>BVHAccel::construct_bvh</code> builds the tree recursively. It creates a node with the box around the given range of primitives. If the range has at most <code>max_leaf_size</code> primitives, the node is a leaf that stores the range. Otherwise, the range is split in two with <code>std::partition</code>, which reorders the primitives in place so that each subtree owns a contiguous section of one shared list, and each half is built recursively.</p>
+		<p>To split, we take the box around the centroids of the primitives' bounding boxes and choose its longest axis, along which the primitives are most spread out. Centroids keep a single large primitive from deciding the axis. The split point is the average centroid along that axis, which follows where the primitives are and tends to give halves of similar size. A primitive goes left if its centroid is below the split point and right otherwise. If all centroids fall on one side, one half would be empty and the recursion would never end, so we instead split at the median centroid with <code>std::nth_element</code>.</p>
+		<p><code>BBox::intersect</code> treats the box as the overlap of three slabs, one per axis. For each axis, it computes the t values where the ray crosses the two planes, swapped if the ray points in the negative direction. The ray is inside the box from the latest entry to the earliest exit, and hits it if that interval overlaps the range from <code>min_t</code> to <code>max_t</code>. <code>BVHAccel::intersect</code> skips any node whose box the ray misses, tests the primitives at leaves, and visits both children of interior nodes, since the nearest hit can be in either. <code>BVHAccel::has_intersection</code> does the same but returns at the first hit.</p>
+		<p>With the BVH, each of the scenes below renders in under a tenth of a second.</p>
+
+		<div style="display: flex; flex-direction: column; align-items: center;">
+			<table style="width: 100%; text-align: center; border-collapse: collapse;">
+			  <tr>
+				<td style="text-align: center;">
+				  <img src="assets/part2-maxplanck.png" width="400px"/>
+				  <figcaption>meshedit/maxplanck.dae (50,801 triangles)</figcaption>
+				</td>
+				<td style="text-align: center;">
+				  <img src="assets/part2-peter.png" width="400px"/>
+				  <figcaption>meshedit/peter.dae (40,018 triangles)</figcaption>
+				</td>
+			  </tr>
+			  <tr>
+				<td style="text-align: center;">
+				  <img src="assets/part2-cbdragon.png" width="400px"/>
+				  <figcaption>sky/CBdragon.dae (100,012 primitives)</figcaption>
+				</td>
+				<td style="text-align: center;">
+				  <img src="assets/part2-cblucy.png" width="400px"/>
+				  <figcaption>sky/CBlucy.dae (133,796 primitives)</figcaption>
+				</td>
+			  </tr>
+			</table>
+		</div>
+
+		<table style="margin: 0 auto; border-collapse: collapse;">
+		  <tr><th style="padding: 4px 12px; border-bottom: 1px solid #ddd; text-align: left;">Scene</th><th style="padding: 4px 12px; border-bottom: 1px solid #ddd; text-align: right;">Primitives</th><th style="padding: 4px 12px; border-bottom: 1px solid #ddd; text-align: right;">Without BVH (s)</th><th style="padding: 4px 12px; border-bottom: 1px solid #ddd; text-align: right;">With BVH (s)</th><th style="padding: 4px 12px; border-bottom: 1px solid #ddd; text-align: right;">Speedup</th></tr>
+		  <tr><td style="padding: 4px 12px; border-bottom: 1px solid #ddd; text-align: left;">sky/CBspheres_lambertian.dae</td><td style="padding: 4px 12px; border-bottom: 1px solid #ddd; text-align: right;">14</td><td style="padding: 4px 12px; border-bottom: 1px solid #ddd; text-align: right;">0.034</td><td style="padding: 4px 12px; border-bottom: 1px solid #ddd; text-align: right;">0.038</td><td style="padding: 4px 12px; border-bottom: 1px solid #ddd; text-align: right;">0.9×</td></tr>
+		  <tr><td style="padding: 4px 12px; border-bottom: 1px solid #ddd; text-align: left;">sky/CBgems.dae</td><td style="padding: 4px 12px; border-bottom: 1px solid #ddd; text-align: right;">252</td><td style="padding: 4px 12px; border-bottom: 1px solid #ddd; text-align: right;">0.321</td><td style="padding: 4px 12px; border-bottom: 1px solid #ddd; text-align: right;">0.033</td><td style="padding: 4px 12px; border-bottom: 1px solid #ddd; text-align: right;">9.7×</td></tr>
+		  <tr><td style="padding: 4px 12px; border-bottom: 1px solid #ddd; text-align: left;">keenan/banana.dae</td><td style="padding: 4px 12px; border-bottom: 1px solid #ddd; text-align: right;">2,458</td><td style="padding: 4px 12px; border-bottom: 1px solid #ddd; text-align: right;">2.791</td><td style="padding: 4px 12px; border-bottom: 1px solid #ddd; text-align: right;">0.024</td><td style="padding: 4px 12px; border-bottom: 1px solid #ddd; text-align: right;">115×</td></tr>
+		  <tr><td style="padding: 4px 12px; border-bottom: 1px solid #ddd; text-align: left;">meshedit/teapot.dae</td><td style="padding: 4px 12px; border-bottom: 1px solid #ddd; text-align: right;">2,464</td><td style="padding: 4px 12px; border-bottom: 1px solid #ddd; text-align: right;">2.542</td><td style="padding: 4px 12px; border-bottom: 1px solid #ddd; text-align: right;">0.030</td><td style="padding: 4px 12px; border-bottom: 1px solid #ddd; text-align: right;">84×</td></tr>
+		  <tr><td style="padding: 4px 12px; border-bottom: 1px solid #ddd; text-align: left;">meshedit/cow.dae</td><td style="padding: 4px 12px; border-bottom: 1px solid #ddd; text-align: right;">5,856</td><td style="padding: 4px 12px; border-bottom: 1px solid #ddd; text-align: right;">6.737</td><td style="padding: 4px 12px; border-bottom: 1px solid #ddd; text-align: right;">0.041</td><td style="padding: 4px 12px; border-bottom: 1px solid #ddd; text-align: right;">164×</td></tr>
+		  <tr><td style="padding: 4px 12px; border-bottom: 1px solid #ddd; text-align: left;">meshedit/beetle.dae</td><td style="padding: 4px 12px; border-bottom: 1px solid #ddd; text-align: right;">7,558</td><td style="padding: 4px 12px; border-bottom: 1px solid #ddd; text-align: right;">8.822</td><td style="padding: 4px 12px; border-bottom: 1px solid #ddd; text-align: right;">0.035</td><td style="padding: 4px 12px; border-bottom: 1px solid #ddd; text-align: right;">251×</td></tr>
+		  <tr><td style="padding: 4px 12px; border-bottom: 1px solid #ddd; text-align: left;">sky/CBcoil.dae</td><td style="padding: 4px 12px; border-bottom: 1px solid #ddd; text-align: right;">7,884</td><td style="padding: 4px 12px; border-bottom: 1px solid #ddd; text-align: right;">9.198</td><td style="padding: 4px 12px; border-bottom: 1px solid #ddd; text-align: right;">0.036</td><td style="padding: 4px 12px; border-bottom: 1px solid #ddd; text-align: right;">259×</td></tr>
+		  <tr><td style="padding: 4px 12px; border-bottom: 1px solid #ddd; text-align: left;">sky/CBbunny.dae</td><td style="padding: 4px 12px; border-bottom: 1px solid #ddd; text-align: right;">28,588</td><td style="padding: 4px 12px; border-bottom: 1px solid #ddd; text-align: right;">46.775</td><td style="padding: 4px 12px; border-bottom: 1px solid #ddd; text-align: right;">0.036</td><td style="padding: 4px 12px; border-bottom: 1px solid #ddd; text-align: right;">1,299×</td></tr>
+		</table>
+		<figcaption style="text-align: center;">Rendering times with 8 threads at 800 × 600 pixels.</figcaption>
+		<p>Without the BVH, rendering time grows linearly with the number of primitives, because every ray is tested against every primitive. With the BVH, every scene renders in about 0.02 to 0.04 seconds, and the speedup grows with scene size, from about 10 times for the gems to about 1,300 times for the bunny. This is because each ray is only tested against the primitives in the leaves it reaches: for the cow, tests per ray dropped from 5,856 to about 3. The 14-primitive spheres scene gets no speedup, because its render time is mostly fixed overhead. The same overhead is why render times with the BVH barely depend on the number of primitives.</p>
 
 		<h2>Part 3: Direct Illumination</h2>
 		Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.
