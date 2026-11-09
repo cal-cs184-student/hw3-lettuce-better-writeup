@@ -28,24 +28,23 @@
 	<body>
 		<div class="container">
 		<h1>CS184/284A Fall 2026 Homework 3 Write-Up</h1>
-		<div style="text-align: center;">Names: </div>
+		<div style="text-align: center;">Names: Loren Hung, Jim Fang</div>
 
 		<br>
 
-		Link to webpage: (TODO) <a href="https://cs184.eecs.berkeley.edu/fa26">cs184.eecs.berkeley.edu/fa26</a>
-		Link to GitHub repository: (TODO) <a href="https://cs184.eecs.berkeley.edu/fa26">cs184.eecs.berkeley.edu/fa26</a>
-		
-		<figure>
-			<img src="assets/cornell.png" alt="Cornell Boxes with Bunnies" style="width:70%"/>
-			<figcaption>You can add images with captions!</figcaption>
-		</figure>
+		Link to webpage: <a href="https://cal-cs184-student.github.io/hw3-lettuce-better-writeup/">cal-cs184-student.github.io/hw3-lettuce-better-writeup</a>
+
+		<br>
+
+		Link to GitHub repository: <a href="https://github.com/cal-cs184-student/hw3-lettuce-better">github.com/cal-cs184-student/hw3-lettuce-better</a>
 
 		<!--
 		We've already added one heading per part, to make your write-up as navigable when grading. Please fit your write-up within these sections!
 		-->
 
 		<h2>Overview</h2>
-		Give a high-level overview of what you implemented in this homework. Think about what you've built as a whole. Share your thoughts on what interesting things you've learned from completing the homework.
+		<p>In this homework, we built a physically based path tracer. We generate camera rays through random points in each pixel and intersect them with triangles and spheres, using the Möller–Trumbore algorithm for triangles. To make large scenes practical, we built a bounding volume hierarchy that lets each ray skip most of the scene, which reduced rendering times by up to three orders of magnitude. We then replaced normal shading with real lighting. We implemented a diffuse BSDF, added the light emitted by light sources, and estimated direct illumination with Monte Carlo integration, using either uniform hemisphere sampling or sampling the lights directly.</p>
+		<p>The most interesting part was seeing how much the right algorithm matters, even when the result is the same. The BVH produced pixel-identical images to testing every primitive, but made scenes with over a hundred thousand triangles render in a fraction of a second. Similarly, both direct lighting methods estimate the same integral, but sampling the lights produced far less noise for the same number of samples and could render point lights, which hemisphere sampling cannot.</p>
 
 		<h2>Part 1: Ray Generation and Scene Intersection</h2>
 		<p>For each pixel, we generate camera rays through it, find the nearest surface each ray hits, and compute a color from that hit.</p>
@@ -126,10 +125,69 @@
 		  <tr><td style="padding: 4px 12px; border-bottom: 1px solid #ddd; text-align: left;">sky/CBbunny.dae</td><td style="padding: 4px 12px; border-bottom: 1px solid #ddd; text-align: right;">28,588</td><td style="padding: 4px 12px; border-bottom: 1px solid #ddd; text-align: right;">46.775</td><td style="padding: 4px 12px; border-bottom: 1px solid #ddd; text-align: right;">0.036</td><td style="padding: 4px 12px; border-bottom: 1px solid #ddd; text-align: right;">1,299×</td></tr>
 		</table>
 		<figcaption style="text-align: center;">Rendering times with 8 threads at 800 × 600 pixels.</figcaption>
-		<p>Without the BVH, rendering time grows linearly with the number of primitives, because every ray is tested against every primitive. With the BVH, every scene renders in about 0.02 to 0.04 seconds, and the speedup grows with scene size, from about 10 times for the gems to about 1,300 times for the bunny. This is because each ray is only tested against the primitives in the leaves it reaches: for the cow, tests per ray dropped from 5,856 to about 3. The 14-primitive spheres scene gets no speedup, because its render time is mostly fixed overhead. The same overhead is why render times with the BVH barely depend on the number of primitives.</p>
+		<p>Without the BVH, rendering time grows linearly with the number of primitives, because every ray is tested against every primitive. With the BVH, every scene renders in about 0.02 to 0.04 seconds, and the speedup grows with scene size, from about 10 times for the gems to about 1,300 times for the bunny. This is because each ray is only tested against the primitives in the leaves it reaches. For the cow, tests per ray dropped from 5,856 to about 3. The 14-primitive spheres scene gets no speedup, because its render time is mostly fixed overhead. The same overhead is why render times with the BVH barely depend on the number of primitives.</p>
 
 		<h2>Part 3: Direct Illumination</h2>
-		Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.
+		<p>In Parts 1 and 2, we colored each pixel by the surface normal at the nearest hit. In this part, we replace this with physically based lighting, so each pixel shows the light that actually leaves the visible surface toward the camera. For now, we include two kinds of light. <code>zero_bounce_radiance</code> returns the light the surface emits, which is only nonzero for light sources. <code>one_bounce_radiance</code> estimates direct illumination, which is light that arrives straight from a light source and reflects once toward the camera. The pixel's value is the sum of the two, and light that bounces off other surfaces first is added in Part 4.</p>
+		<p>All surfaces here are diffuse, scattering light equally in every direction, so <code>DiffuseBSDF::f</code> returns the albedo divided by π. Since the cosine integrates to π over the hemisphere, this makes a surface reflect exactly its albedo.</p>
+		<p>Direct illumination is an integral over the hemisphere of the BSDF times the incoming light times the cosine of the angle from the normal. We estimate it with Monte Carlo integration by sampling directions, evaluating the integrand along each one, dividing by the probability of that direction, and averaging. Both methods work in a local frame where the normal is the z-axis, so the cosine is the direction's z component, and cast rays from the hit point with <code>min_t</code> set to a small epsilon so they do not hit the surface they start on.</p>
+		<p><code>estimate_direct_lighting_hemisphere</code> samples directions uniformly, each with probability 1 / (2π). If the ray in a sampled direction hits a light, the sample contributes the BSDF times the light's emission times the cosine, multiplied by 2π; otherwise it contributes nothing.</p>
+		<p><code>estimate_direct_lighting_importance</code> samples the lights instead. For each light, <code>sample_L</code> picks a point on it and returns the direction, distance, radiance, and probability of the sample. Point lights get one sample, since every sample is the same, and area lights get the number set by <code>-l</code>. We skip samples where the light is behind the surface and cast a shadow ray that stops just before the light. If nothing blocks it, the sample contributes the BSDF times the radiance times the cosine, divided by the probability. Each light's samples are averaged, and the lights are summed.</p>
+		<p>The images below use 64 samples per pixel and 32 per light.</p>
+
+		<div style="display: flex; flex-direction: column; align-items: center;">
+			<table style="width: 100%; text-align: center; border-collapse: collapse;">
+			  <tr>
+				<td style="text-align: center;">
+				  <img src="assets/part3-bunny-hemisphere.png" width="400px"/>
+				  <figcaption>sky/CBbunny.dae, uniform hemisphere sampling</figcaption>
+				</td>
+				<td style="text-align: center;">
+				  <img src="assets/part3-bunny-light.png" width="400px"/>
+				  <figcaption>sky/CBbunny.dae, light sampling</figcaption>
+				</td>
+			  </tr>
+			  <tr>
+				<td style="text-align: center;">
+				  <img src="assets/part3-spheres-hemisphere.png" width="400px"/>
+				  <figcaption>sky/CBspheres_lambertian.dae, uniform hemisphere sampling</figcaption>
+				</td>
+				<td style="text-align: center;">
+				  <img src="assets/part3-spheres-light.png" width="400px"/>
+				  <figcaption>sky/CBspheres_lambertian.dae, light sampling</figcaption>
+				</td>
+			  </tr>
+			</table>
+		</div>
+
+		<p>To compare noise in soft shadows, we rendered the bunny with light sampling at 1 sample per pixel and 1, 4, 16, and 64 light samples. With 1 light sample, each point either sees the sampled point on the light or does not, so the shadow is speckled black and lit. More light samples average over more of the light, so the shadow becomes a smooth gradient. Compared with the light-sampled bunny above, the error in the shadow was 89%, 44%, 24%, and 16% of its average brightness. Each fourfold increase roughly halves the error, as expected since Monte Carlo error falls with the square root of the sample count. The gain slows at 64, likely because the remaining error also includes noise from using 1 sample per pixel.</p>
+
+		<div style="display: flex; flex-direction: column; align-items: center;">
+			<table style="width: 100%; text-align: center; border-collapse: collapse;">
+			  <tr>
+				<td style="text-align: center;">
+				  <img src="assets/part3-bunny-l1.png" width="400px"/>
+				  <figcaption>1 light sample</figcaption>
+				</td>
+				<td style="text-align: center;">
+				  <img src="assets/part3-bunny-l4.png" width="400px"/>
+				  <figcaption>4 light samples</figcaption>
+				</td>
+			  </tr>
+			  <tr>
+				<td style="text-align: center;">
+				  <img src="assets/part3-bunny-l16.png" width="400px"/>
+				  <figcaption>16 light samples</figcaption>
+				</td>
+				<td style="text-align: center;">
+				  <img src="assets/part3-bunny-l64.png" width="400px"/>
+				  <figcaption>64 light samples</figcaption>
+				</td>
+			  </tr>
+			</table>
+		</div>
+
+		<p>Light sampling is far less noisy than hemisphere sampling for the same number of samples. At 64 samples per pixel and 32 per light, the pixel noise on the back wall was 16% of its brightness with hemisphere sampling and under 1% with light sampling. The light covers a small part of the hemisphere, so most uniform samples miss it and contribute nothing, while the few that hit contribute a lot. Light sampling only chooses directions toward the light, so every unblocked sample contributes. It was also faster, 38 seconds instead of 54 for the bunny, likely because shadow rays can stop at the first object they hit. Finally, hemisphere sampling cannot render point lights, since a random direction never exactly reaches a point, while light sampling handles them with one sample, as in <code>sky/dragon.dae</code>.</p>
 
 		<h2>Part 4: Global Illumination</h2>
 		Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.
