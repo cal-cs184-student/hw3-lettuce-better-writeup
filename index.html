@@ -387,7 +387,7 @@
 
 		<h2>Part 5: Adaptive Sampling</h2>
 		<p>Adaptive sampling stops tracing a pixel once its estimated noise is low enough. For each new ray sample, we added its
-			illuminance to <code>s1</code> and its squared illuminance to <code>s2</code>. After each batch of 32 samples, we
+			illuminance to <code>s1</code> (the sum of the samples' illuminance values) and its squared illuminance to <code>s2</code>. After each batch of 32 samples, we
 			calculate the mean and sample variance, then compute the 95% confidence interval, <code>I = 1.96 × σ / √n</code>. If
 			<code>I ≤ maxTolerance × mean</code>, the pixel has converged and sampling stops. Otherwise, sampling continues up
 			to 2048 samples. The pixel color uses the average of its traced samples, and the sampling-rate image records the
